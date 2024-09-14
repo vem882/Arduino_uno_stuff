@@ -1,94 +1,109 @@
-/*
-Tehtävä: 
-Tee sekuntikello käyttäen Loop-rakennetta ja Timeria. Sekuntikellon tulee laskea sekunnin kymmenyksiä, sekunteja ja minuutteja
+#include <Arduino_FreeRTOS.h>
 
-- Sekuntikello käynnistetään maadoittamalla pinni 2 (voit käyttää keskeytyksiä apuna)
+// define two tasks for Blink & AnalogRead
+void TaskBlink( void *pvParameters );
+void TaskAnalogRead( void *pvParameters );
 
-- Sekuntikello päivittää ajan sarjaportille sekunnin välein.
-
-- Sekuntikello pysäytetään maadoittamalla pinni 3, jolloin tulostetaan tarkka aika kymmenyksineen, ja nollataan aika uutta ajanottoa varten.
-
-*/
-// Pinnit
-const int startPin = 2;  // Pinni 2: Sekuntikellon käynistykseen
-const int stopPin = 3;   // Pinni 3: Sekuntikellon pysäyttämiseen
-
-volatile boolean running = false;
-volatile boolean stopped = false;
-
-// Ajan muuttujat
-unsigned long previousMillis = 0;
-unsigned long timeElapsed = 0;  // Aika millisekunneissa
-unsigned long deciseconds = 0;  // Sekunnin kymmenykset
-unsigned long seconds = 0;      // Sekunnit
-unsigned long minutes = 0;      // Minuutit
-
+// the setup function runs once when you press reset or power the board
 void setup() {
-  pinMode(startPin, INPUT_PULLUP);  // Start-pinni
-  pinMode(stopPin, INPUT_PULLUP);   // Stop-pinni
-
-  // Keskeytykset
-  attachInterrupt(digitalPinToInterrupt(startPin), startTimer, FALLING);
-  attachInterrupt(digitalPinToInterrupt(stopPin), stopTimer, FALLING);
-
-  Serial.begin(9600);  // Sarjaportin alustus
-}
-
-void loop() {
-  if (running) {
-    unsigned long currentMillis = millis();
-    
-    // Tarkistetaan, onko 100 millisekuntia kulunut
-    if (currentMillis - previousMillis >= 100) {
-      previousMillis = currentMillis;
-      timeElapsed += 100;
-      
-      deciseconds++;
-      if (deciseconds >= 10) {
-        deciseconds = 0;
-        seconds++;
-        
-        if (seconds >= 60) {
-          seconds = 0;
-          minutes++;
-        }
-      }
-      
-      // Päivitetään aika sarjaporttiin sekunnin välein
-      if (seconds % 1 == 0 && deciseconds == 0) {
-        Serial.print("Aika: ");
-        Serial.print(minutes);
-        Serial.print(" min, ");
-        Serial.print(seconds);
-        Serial.println(" sek.");
-      }
-    }
+  
+  // initialize serial communication at 9600 bits per second:
+  Serial.begin(9600);
+  
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB, on LEONARDO, MICRO, YUN, and other 32u4 based boards.
   }
 
-  if (stopped) {
-    // Tulostetaan tarkka aika pysäytyksen yhteydessä
-    Serial.print("Lopullinen aika: ");
-    Serial.print(minutes);
-    Serial.print(" min, ");
-    Serial.print(seconds);
-    Serial.print(" sek, ");
-    Serial.print(deciseconds);
-    Serial.println(" kymmenystä.");
-    
-    // Nollataan ajanottoa varten
-    deciseconds = 0;
-    seconds = 0;
-    minutes = 0;
-    timeElapsed = 0;
-    stopped = false;
+  // Now set up two tasks to run independently.
+  xTaskCreate(
+    TaskBlink
+    ,  "Blink"   // A name just for humans
+    ,  128  // This stack size can be checked & adjusted by reading the Stack Highwater
+    ,  NULL
+    ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+    ,  NULL );
+
+  xTaskCreate(
+    TaskAnalogRead
+    ,  "AnalogRead"
+    ,  128  // Stack size
+    ,  NULL
+    ,  1  // Priority
+    ,  NULL );
+
+  // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
+}
+
+void loop()
+{
+  // Empty. Things are done in Tasks.
+}
+
+/*--------------------------------------------------*/
+/*---------------------- Tasks ---------------------*/
+/*--------------------------------------------------*/
+
+void TaskBlink(void *pvParameters)  // This is a task.
+{
+  (void) pvParameters;
+
+/*
+  Blink
+  Turns on an LED on for one second, then off for one second, repeatedly.
+
+  Most Arduinos have an on-board LED you can control. On the UNO, LEONARDO, MEGA, and ZERO 
+  it is attached to digital pin 13, on MKR1000 on pin 6. LED_BUILTIN takes care 
+  of use the correct LED pin whatever is the board used.
+  
+  The MICRO does not have a LED_BUILTIN available. For the MICRO board please substitute
+  the LED_BUILTIN definition with either LED_BUILTIN_RX or LED_BUILTIN_TX.
+  e.g. pinMode(LED_BUILTIN_RX, OUTPUT); etc.
+  
+  If you want to know what pin the on-board LED is connected to on your Arduino model, check
+  the Technical Specs of your board  at https://www.arduino.cc/en/Main/Products
+  
+  This example code is in the public domain.
+
+  modified 8 May 2014
+  by Scott Fitzgerald
+  
+  modified 2 Sep 2016
+  by Arturo Guadalupi
+*/
+
+  // initialize digital LED_BUILTIN on pin 13 as an output.
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  for (;;) // A Task shall never return or exit.
+  {
+    digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
+    Serial.println("LED ON");  
+    vTaskDelay( 1000 / portTICK_PERIOD_MS ); // wait for one second
+    digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
+    Serial.println("LED OFF");  
+    vTaskDelay( 1000 / portTICK_PERIOD_MS ); // wait for one second
   }
 }
 
-void startTimer() {
-  running = true;
-}
+void TaskAnalogRead(void *pvParameters)  // This is a task.
+{
+  (void) pvParameters;
+  
+/*
+  AnalogReadSerial
+  Reads an analog input on pin 0, prints the result to the serial monitor.
+  Graphical representation is available using serial plotter (Tools > Serial Plotter menu)
+  Attach the center pin of a potentiometer to pin A0, and the outside pins to +5V and ground.
 
-void stopTimer() {
-  running = false;
-  stopped = true;
+  This example code is in the public domain.
+*/
+
+  for (;;)
+  {
+    // read the input on analog pin 0:
+    int sensorValue = analogRead(A0);
+    // print out the value you read:
+    Serial.println(sensorValue);
+    vTaskDelay(10);  // ten tick delay (150ms) in between reads for stability
+  }
 }
